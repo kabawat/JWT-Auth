@@ -1,0 +1,41 @@
+{
+  "name": "@studio/jwt",
+  "version": "1.0.0",
+  "description": "Production-ready JWT creation and verification for Studio services",
+  "type": "module",
+  "main": "./src/verify.js",
+  "exports": {
+    "./create": "./src/create.js",
+    "./verify": "./src/verify.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/**/*.test.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/logic-x/studio-jwt.git"
+  },
+  "keywords": [
+    "jwt",
+    "jose",
+    "jwks",
+    "authentication",
+    "rs256"
+  ],
+  "author": "Studio Engineering",
+  "license": "ISC",
+  "dependencies": {
+    "jose": "^6.2.10"
+  }
+}
