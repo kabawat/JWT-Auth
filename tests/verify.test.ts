@@ -1,24 +1,28 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { SignJWT, importPKCS8 } from 'jose';
-import { verifyToken } from '../dist/verify.js';
-import { createToken } from '../dist/create.js';
-import { _resetKeys } from '../dist/keys.js';
-import { ERROR_CODES, StudioJwtError } from '../dist/errors.js';
+import { verifyToken } from '../src/verify.js';
+import { createToken } from '../src/create.js';
+import { _resetKeys } from '../src/keys.js';
+import { ERROR_CODES, StudioJwtError } from '../src/errors.js';
+import type { SignConfig, VerifyConfig } from '../src/types.js';
 import {
   generateTestRsaKeyPair,
   exportJwkFromPublicKeyPem,
   createTempKeyFile,
   startMockJwksServer,
+  type KeyPairResult,
+  type TempKeyFile,
+  type MockJwksServer,
 } from './test-utils.js';
 
 describe('verifyToken', () => {
-  let testKeypair;
-  let tempKey;
-  let mockServer;
-  let kid = 'auth-test-key-1';
-  let verifyConfig;
-  let signConfig;
+  let testKeypair: KeyPairResult;
+  let tempKey: TempKeyFile;
+  let mockServer: MockJwksServer;
+  const kid = 'auth-test-key-1';
+  let verifyConfig: VerifyConfig;
+  let signConfig: SignConfig;
 
   beforeEach(async () => {
     testKeypair = generateTestRsaKeyPair();
@@ -54,7 +58,10 @@ describe('verifyToken', () => {
     _resetKeys();
   });
 
-  async function signHelper(claims = {}, options = {}) {
+  async function signHelper(
+    claims: Record<string, unknown> = {},
+    options: { alg?: string; kid?: string | null; issuer?: string; audience?: string; iat?: number; exp?: string | number } = {},
+  ): Promise<string> {
     const key = await importPKCS8(testKeypair.privateKey, 'RS256');
     const builder = new SignJWT({
       type: 'access',
@@ -63,7 +70,7 @@ describe('verifyToken', () => {
     })
       .setProtectedHeader({
         alg: options.alg || 'RS256',
-        kid: options.kid !== undefined ? options.kid : kid,
+        kid: options.kid !== undefined ? (options.kid === null ? undefined : options.kid) : kid,
         typ: 'JWT',
       })
       .setIssuer(options.issuer || 'studio-auth')
@@ -88,16 +95,16 @@ describe('verifyToken', () => {
     });
 
     const payload = await verifyToken(token, verifyConfig);
-    assert.equal(typeof payload, 'object');
-    assert.equal(payload.sub, 'test-subject');
-    assert.equal(payload.type, 'access');
-    assert.equal(payload.actor, 'SALON_USER');
-    assert.equal(payload.role, 'ADMIN');
-    assert.equal(payload.sid, 'session-123');
-    assert.equal(payload.did, 'device-456');
-    assert.equal(payload.iss, 'studio-auth');
-    assert.equal(payload.aud, 'studio-api');
-    assert.ok(payload.exp > payload.iat);
+    expect(typeof payload).toBe('object');
+    expect(payload.sub).toBe('test-subject');
+    expect(payload.type).toBe('access');
+    expect(payload.actor).toBe('SALON_USER');
+    expect(payload.role).toBe('ADMIN');
+    expect(payload.sid).toBe('session-123');
+    expect(payload.did).toBe('device-456');
+    expect(payload.iss).toBe('studio-auth');
+    expect(payload.aud).toBe('studio-api');
+    expect(payload.exp!).toBeGreaterThan(payload.iat!);
   });
 
   it('verifies tokens created by createToken end-to-end', async () => {
@@ -113,10 +120,10 @@ describe('verifyToken', () => {
     );
 
     const payload = await verifyToken(token, verifyConfig);
-    assert.equal(payload.sub, 'e2e-user');
-    assert.equal(payload.actor, 'COMPANY_STAFF');
-    assert.equal(payload.role, 'SUPER_ADMIN');
-    assert.equal(payload.type, 'access');
+    expect(payload.sub).toBe('e2e-user');
+    expect(payload.actor).toBe('COMPANY_STAFF');
+    expect(payload.role).toBe('SUPER_ADMIN');
+    expect(payload.type).toBe('access');
   });
 
   it('fails with CONFIG_ERROR when config parameter is missing or incomplete', async () => {
@@ -124,7 +131,7 @@ describe('verifyToken', () => {
 
     // Missing config
     await assert.rejects(
-      async () => verifyToken(token),
+      async () => verifyToken(token, undefined as any),
       (err) => {
         assert.ok(err instanceof StudioJwtError);
         assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
@@ -136,7 +143,7 @@ describe('verifyToken', () => {
     await assert.rejects(
       async () => verifyToken(token, { ...verifyConfig, jwksUrl: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -145,7 +152,7 @@ describe('verifyToken', () => {
     await assert.rejects(
       async () => verifyToken(token, { ...verifyConfig, jwksUrl: 'not-a-url' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -154,7 +161,7 @@ describe('verifyToken', () => {
     await assert.rejects(
       async () => verifyToken(token, { ...verifyConfig, issuer: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -163,7 +170,7 @@ describe('verifyToken', () => {
     await assert.rejects(
       async () => verifyToken(token, { ...verifyConfig, audience: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -189,9 +196,9 @@ describe('verifyToken', () => {
       'not.a.valid.jwt.four.parts',
       'only-one-part',
       'invalid-base64.header.signature',
-      12345,
-      null,
-      undefined,
+      12345 as any,
+      null as any,
+      undefined as any,
     ];
 
     for (const t of malformed) {
@@ -210,7 +217,7 @@ describe('verifyToken', () => {
   it('rejects tampered signature with INVALID_SIGNATURE code', async () => {
     const validToken = await signHelper();
     const parts = validToken.split('.');
-    const tamperedSig = parts[2].slice(0, -4) + 'AAAA';
+    const tamperedSig = parts[2]!.slice(0, -4) + 'AAAA';
     const tamperedToken = `${parts[0]}.${parts[1]}.${tamperedSig}`;
 
     await assert.rejects(
@@ -387,7 +394,7 @@ describe('verifyToken', () => {
   });
 
   it('fails with JWKS_UNAVAILABLE when JWKS endpoint is unreachable', async () => {
-    const unreachableConfig = {
+    const unreachableConfig: VerifyConfig = {
       ...verifyConfig,
       jwksUrl: 'http://127.0.0.1:19991/unreachable/jwks.json',
     };
@@ -414,10 +421,10 @@ describe('verifyToken', () => {
       .setIssuer('studio-auth')
       .setAudience('studio-api')
       .setIssuedAt(nowSec - 100)
-      .setExpirationTime(nowSec - 2) // expired 2 seconds ago
+      .setExpirationTime(nowSec - 2)
       .sign(key);
 
     const payload = await verifyToken(token, { ...verifyConfig, clockTolerance: 5 });
-    assert.equal(payload.sub, 'clock-user');
+    expect(payload.sub).toBe('clock-user');
   });
 });
