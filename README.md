@@ -1,42 +1,41 @@
-# @studio/jwt
+# @kabawat/jwt-auth
 
-Lightweight RS256 JWT creation and JWKS verification for Studio microservices.
+Production-ready, lightweight RS256 JWT creation and JWKS verification engine for distributed services.
 
 ---
 
 ## Installation
 
 ```bash
-npm install @studio/jwt
+npm install @kabawat/jwt-auth
 ```
 
-> **Note:** For GitHub Packages, ensure `.npmrc` includes:
-> ```ini
-> @studio:registry=https://npm.pkg.github.com
-> //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-> ```
+Published publicly to the official [npm registry](https://www.npmjs.com/package/@kabawat/jwt-auth).
 
 ---
 
 ## How to Use
 
-The package exposes two isolated entry points:
-- `@studio/jwt/create` — Issue tokens (Auth Service)
-- `@studio/jwt/verify` — Verify tokens via JWKS (Downstream Services)
+The package exposes modular entry points:
+- `@kabawat/jwt-auth` — Unified entry point (exports `createToken`, `verifyToken`, error classes, and TypeScript types)
+- `@kabawat/jwt-auth/create` — Issue RS256 tokens (Auth Service)
+- `@kabawat/jwt-auth/verify` — Verify RS256 tokens via JWKS with key rotation & in-memory caching (Downstream Services)
+- `@kabawat/jwt-auth/errors` — Structured operational errors & codes
+- `@kabawat/jwt-auth/config` — Configuration validation schemas
 
 ---
 
 ### 1. Create Token (Auth Service)
 
-```javascript
-import { createToken } from '@studio/jwt/create';
+```typescript
+import { createToken } from '@kabawat/jwt-auth/create';
 
 const token = await createToken(
   {
     sub: 'user_123',
     role: 'ADMIN',
     actor: 'COMPANY_STAFF',
-    sid: 'session_abc', // optional custom claims
+    sid: 'session_abc', // custom claims
   },
   {
     privateKeyPath: 'keys/access-private.pem', // or privateKey: 'PEM_STRING'
@@ -48,64 +47,64 @@ const token = await createToken(
 );
 ```
 
-#### Create Config Options
-
-| Option | Type | Description |
-| :--- | :--- | :--- |
-| `privateKeyPath` / `privateKey` | `string` | RSA private key file path or PEM string *(required)* |
-| `kid` | `string` | Key ID matching the public JWKS key *(required)* |
-| `issuer` | `string` | Expected issuer (`iss`) *(required)* |
-| `audience` | `string` | Expected audience (`aud`) *(required)* |
-| `expiresIn` | `string \| number` | Expiry duration (e.g., `'15m'`, `'1h'`) *(required)* |
-
 ---
 
-### 2. Verify Token (Downstream Services / Middleware)
+### 2. Verify Token (Downstream Microservices)
 
-```javascript
-import { verifyToken } from '@studio/jwt/verify';
+```typescript
+import { verifyToken } from '@kabawat/jwt-auth/verify';
 
-const verifyConfig = {
-  jwksUrl: 'http://studio.local/auth/.well-known/jwks.json',
-  issuer: 'salon-x-auth',
-  audience: 'salon-x',
-};
+try {
+  const payload = await verifyToken(token, {
+    jwksUrl: 'https://auth.salon-x.internal/.well-known/jwks.json',
+    issuer: 'salon-x-auth',
+    audience: 'salon-x',
+    clockTolerance: 5, // optional seconds
+  });
 
-// Express Middleware Example
-export async function requireAuth(req, res, next) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/, '');
-  if (!token) {
-    return res.status(401).json({ message: 'Missing token' });
-  }
-
-  try {
-    const payload = await verifyToken(token, verifyConfig);
-    req.auth = payload;
-    next();
-  } catch (err) {
-    if (err.category === 'INFRASTRUCTURE') {
-      return res.status(503).json({ message: 'Auth service unavailable' });
-    }
-    return res.status(401).json({ message: 'Invalid or expired token' });
+  console.log(`Authenticated user: ${payload.sub}, role: ${payload.role}`);
+} catch (err) {
+  if (err.code === 'TOKEN_EXPIRED') {
+    // Return 401 token expired
+  } else if (err.code === 'JWKS_UNAVAILABLE') {
+    // Return 503 auth service temporarily unavailable
   }
 }
 ```
 
-#### Verify Config Options
+---
 
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `jwksUrl` | `string` | *required* | Auth service JWKS endpoint URL |
-| `issuer` | `string` | *required* | Expected token issuer (`iss`) |
-| `audience` | `string` | *required* | Expected token audience (`aud`) |
-| `clockTolerance` | `number` | `5` | Clock skew tolerance in seconds |
-| `cooldownDuration` | `number` | `30000` | Cooldown in ms between JWKS re-fetches |
+### 3. Key Rotation Lifecycle
+
+Supports zero-downtime key rotation:
+1. Generate new keypair with a new `kid` (e.g. `auth-rs256-2`).
+2. Publish both keys (old + new) in Auth Service JWKS.
+3. Switch Auth Service signer to use `auth-rs256-2`.
+4. After existing tokens expire, retire the old key from JWKS.
 
 ---
 
-## Error Handling
+## Scripts
 
-Errors thrown have a `code` and `category`:
+```bash
+# Typecheck TypeScript definitions
+npm run typecheck
 
-- **`err.category === 'CREDENTIALS'`** (HTTP 401): Expired token (`TOKEN_EXPIRED`), invalid signature (`INVALID_SIGNATURE`), malformed token (`INVALID_TOKEN`), unknown kid (`UNKNOWN_KID`).
-- **`err.category === 'INFRASTRUCTURE'`** (HTTP 500 / 503): Missing config (`CONFIG_ERROR`), JWKS unreachable (`JWKS_UNAVAILABLE`), private key read failure (`PRIVATE_KEY_LOAD_ERROR`).
+# Build and generate dist/
+npm run build
+
+# Run unit tests
+npm test
+
+# Run end-to-end manual test example
+npm run manual-test
+
+# Full pre-publish verification
+npm run verify
+```
+
+---
+
+## License
+
+MIT © [Kabawat](https://github.com/kabawat)

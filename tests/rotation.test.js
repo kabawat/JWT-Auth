@@ -1,9 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyToken } from '../src/verify.js';
-import { createToken } from '../src/create.js';
-import { _resetKeys } from '../src/keys.js';
-import { ERROR_CODES, StudioJwtError } from '../src/errors.js';
+import { verifyToken } from '../dist/verify.js';
+import { createToken } from '../dist/create.js';
+import { _resetKeys } from '../dist/keys.js';
+import { ERROR_CODES, StudioJwtError } from '../dist/errors.js';
 import {
   generateTestRsaKeyPair,
   exportJwkFromPublicKeyPem,

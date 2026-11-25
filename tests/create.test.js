@@ -1,9 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
-import { createToken } from '../src/create.js';
-import { _resetKeys } from '../src/keys.js';
-import { ERROR_CODES, StudioJwtError } from '../src/errors.js';
+import { createToken } from '../dist/create.js';
+import { _resetKeys } from '../dist/keys.js';
+import { ERROR_CODES, StudioJwtError } from '../dist/errors.js';
 import {
   generateTestRsaKeyPair,
   generatePkcs1KeyPair,

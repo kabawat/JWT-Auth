@@ -1,21 +1,24 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import { importPKCS8, createRemoteJWKSet } from 'jose';
+import crypto, { type KeyObject } from 'node:crypto';
+import { importPKCS8, createRemoteJWKSet, type JWTVerifyGetKey } from 'jose';
 import { createKeyLoadError } from './errors.js';
+import type { ValidatedSignConfig, ValidatedVerifyConfig } from './types.js';
 
-const privateKeyCache = new Map();
-const pendingKeyPromises = new Map();
-const jwksResolvers = new Map();
+export type KeyLike = KeyObject | CryptoKey | Uint8Array;
 
-export async function getPrivateKey(config) {
+const privateKeyCache = new Map<string, KeyLike>();
+const pendingKeyPromises = new Map<string, Promise<KeyLike>>();
+const jwksResolvers = new Map<string, JWTVerifyGetKey>();
+
+export async function getPrivateKey(config: ValidatedSignConfig): Promise<KeyLike> {
   const cacheKey = config.privateKeyPath || `${config.kid}:${config.privateKey}`;
 
   if (privateKeyCache.has(cacheKey)) {
-    return privateKeyCache.get(cacheKey);
+    return privateKeyCache.get(cacheKey)!;
   }
   if (pendingKeyPromises.has(cacheKey)) {
-    return pendingKeyPromises.get(cacheKey);
+    return pendingKeyPromises.get(cacheKey)!;
   }
 
   const promise = (async () => {
@@ -28,7 +31,7 @@ export async function getPrivateKey(config) {
 
         try {
           pem = await fs.readFile(resolvedPath, 'utf8');
-        } catch (err) {
+        } catch (err: any) {
           throw createKeyLoadError(`Failed to read private key at ${resolvedPath}: ${err.message}`, err);
         }
       }
@@ -42,16 +45,16 @@ export async function getPrivateKey(config) {
       if (pem.includes('BEGIN RSA PRIVATE KEY')) {
         try {
           const keyObject = crypto.createPrivateKey(pem);
-          pkcs8Pem = keyObject.export({ type: 'pkcs8', format: 'pem' });
-        } catch (err) {
+          pkcs8Pem = keyObject.export({ type: 'pkcs8', format: 'pem' }) as string;
+        } catch (err: any) {
           throw createKeyLoadError(`Failed to parse RSA private key: ${err.message}`, err);
         }
       }
 
-      let importedKey;
+      let importedKey: KeyLike | Uint8Array;
       try {
         importedKey = await importPKCS8(pkcs8Pem, 'RS256');
-      } catch (err) {
+      } catch (err: any) {
         throw createKeyLoadError(`Failed to import private key: ${err.message}`, err);
       }
 
@@ -66,7 +69,7 @@ export async function getPrivateKey(config) {
   return promise;
 }
 
-export function getJwksResolver(config) {
+export function getJwksResolver(config: ValidatedVerifyConfig): JWTVerifyGetKey {
   const url = config.jwksUrl;
   let resolver = jwksResolvers.get(url);
 
@@ -82,7 +85,7 @@ export function getJwksResolver(config) {
   return resolver;
 }
 
-export function _resetKeys() {
+export function _resetKeys(): void {
   privateKeyCache.clear();
   pendingKeyPromises.clear();
   jwksResolvers.clear();
