@@ -11,8 +11,9 @@ import {
   createInvalidAlgorithmError,
   createJwksUnavailableError,
 } from './errors.js';
+import type { VerifyConfig, VerifiedJwtPayload } from './types.js';
 
-export async function verifyToken(token, config) {
+export async function verifyToken(token: string, config: VerifyConfig): Promise<VerifiedJwtPayload> {
   if (!token || typeof token !== 'string') {
     throw createInvalidTokenError('Token must be a non-empty string');
   }
@@ -22,10 +23,10 @@ export async function verifyToken(token, config) {
     throw createInvalidTokenError('Malformed JWT: token must contain 3 dot-separated segments');
   }
 
-  let header;
+  let header: ReturnType<typeof decodeProtectedHeader>;
   try {
     header = decodeProtectedHeader(token);
-  } catch (err) {
+  } catch (err: any) {
     throw createInvalidTokenError('Malformed JWT header', err);
   }
 
@@ -44,7 +45,7 @@ export async function verifyToken(token, config) {
   const validConfig = validateVerifyConfig(config);
   const jwksResolver = getJwksResolver(validConfig);
 
-  let verifiedPayload;
+  let verifiedPayload: any;
   try {
     const result = await jwtVerify(token, jwksResolver, {
       issuer: validConfig.issuer,
@@ -53,7 +54,7 @@ export async function verifyToken(token, config) {
       clockTolerance: validConfig.clockTolerance,
     });
     verifiedPayload = result.payload;
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof errors.JWTExpired) {
       throw createTokenExpiredError('Token has expired', err);
     }
@@ -98,8 +99,8 @@ export async function verifyToken(token, config) {
   }
 
   if (!verifiedPayload.sub || typeof verifiedPayload.sub !== 'string' || verifiedPayload.sub.trim() === '') {
-    throw createInvalidClaimsError('Missing or invalid sub claim in verified token');
+    throw createInvalidClaimsError('Missing or invalid sub claim in token');
   }
 
-  return verifiedPayload;
+  return verifiedPayload as VerifiedJwtPayload;
 }

@@ -4,7 +4,37 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 
-export function generateTestRsaKeyPair() {
+export interface KeyPairResult {
+  privateKey: string;
+  publicKey: string;
+}
+
+export interface JwkResult {
+  kty: string;
+  n: string;
+  e: string;
+  use: string;
+  kid: string;
+  alg: string;
+}
+
+export interface TempKeyFile {
+  filePath: string;
+  cleanup: () => void;
+}
+
+export interface MockJwksServer {
+  server: http.Server;
+  url: string;
+  port: number;
+  getRequestCount: () => number;
+  setJwks: (newJwks: Record<string, unknown>) => void;
+  setDelay: (ms: number) => void;
+  setStatusCode: (code: number) => void;
+  close: () => Promise<void>;
+}
+
+export function generateTestRsaKeyPair(): KeyPairResult {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -14,7 +44,7 @@ export function generateTestRsaKeyPair() {
   return { privateKey, publicKey };
 }
 
-export function generatePkcs1KeyPair() {
+export function generatePkcs1KeyPair(): KeyPairResult {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -24,20 +54,20 @@ export function generatePkcs1KeyPair() {
   return { privateKey, publicKey };
 }
 
-export function exportJwkFromPublicKeyPem(publicKeyPem, kid) {
+export function exportJwkFromPublicKeyPem(publicKeyPem: string, kid: string): JwkResult {
   const keyObj = crypto.createPublicKey(publicKeyPem);
   const jwk = keyObj.export({ format: 'jwk' });
   return {
-    kty: jwk.kty,
-    n: jwk.n,
-    e: jwk.e,
+    kty: jwk.kty!,
+    n: jwk.n!,
+    e: jwk.e!,
     use: 'sig',
     kid,
     alg: 'RS256',
   };
 }
 
-export function createTempKeyFile(content, filename = 'test-private.pem') {
+export function createTempKeyFile(content: string, filename = 'test-private.pem'): TempKeyFile {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jwt-test-'));
   const filePath = path.join(tmpDir, filename);
   fs.writeFileSync(filePath, content, { mode: 0o600 });
@@ -53,13 +83,13 @@ export function createTempKeyFile(content, filename = 'test-private.pem') {
   };
 }
 
-export function startMockJwksServer(initialJwks) {
+export function startMockJwksServer(initialJwks: Record<string, unknown>): Promise<MockJwksServer> {
   let jwksData = initialJwks;
   let requestCount = 0;
   let delayMs = 0;
   let statusCode = 200;
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer((_req, res) => {
     requestCount += 1;
 
     const respond = () => {
@@ -85,7 +115,8 @@ export function startMockJwksServer(initialJwks) {
 
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
+      const addr = server.address() as { port: number };
+      const port = addr.port;
       const url = `http://127.0.0.1:${port}/.well-known/jwks.json`;
 
       resolve({
@@ -102,7 +133,9 @@ export function startMockJwksServer(initialJwks) {
         setStatusCode: (code) => {
           statusCode = code;
         },
-        close: () => new Promise((done) => server.close(done)),
+        close: () => new Promise<void>((done) => {
+          server.close(() => done());
+        }),
       });
     });
   });

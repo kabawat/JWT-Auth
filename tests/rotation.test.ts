@@ -1,29 +1,33 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { verifyToken } from '../src/verify.js';
 import { createToken } from '../src/create.js';
 import { _resetKeys } from '../src/keys.js';
 import { ERROR_CODES, StudioJwtError } from '../src/errors.js';
+import type { SignConfig, VerifyConfig } from '../src/types.js';
 import {
   generateTestRsaKeyPair,
   exportJwkFromPublicKeyPem,
   createTempKeyFile,
   startMockJwksServer,
+  type KeyPairResult,
+  type TempKeyFile,
+  type MockJwksServer,
 } from './test-utils.js';
 
 describe('Key Rotation & Multi-Key JWKS', () => {
-  let keypair1;
-  let keypair2;
-  let tempKey1;
-  let tempKey2;
-  let mockServer;
+  let keypair1: KeyPairResult;
+  let keypair2: KeyPairResult;
+  let tempKey1: TempKeyFile;
+  let tempKey2: TempKeyFile;
+  let mockServer: MockJwksServer;
 
   const kid1 = 'auth-rs256-1';
   const kid2 = 'auth-rs256-2';
 
-  let verifyConfig;
-  let signConfigKey1;
-  let signConfigKey2;
+  let verifyConfig: VerifyConfig;
+  let signConfigKey1: SignConfig;
+  let signConfigKey2: SignConfig;
 
   beforeEach(async () => {
     keypair1 = generateTestRsaKeyPair();
@@ -83,41 +87,34 @@ describe('Key Rotation & Multi-Key JWKS', () => {
     const payload1 = await verifyToken(token1, verifyConfig);
     const payload2 = await verifyToken(token2, verifyConfig);
 
-    assert.equal(payload1.sub, 'user-key1');
-    assert.equal(payload2.sub, 'user-key2');
+    expect(payload1.sub).toBe('user-key1');
+    expect(payload2.sub).toBe('user-key2');
   });
 
   it('demonstrates safe zero-downtime key rotation lifecycle', async () => {
-    // Step 1: Start with only key 1 in JWKS
     const jwk1 = exportJwkFromPublicKeyPem(keypair1.publicKey, kid1);
     mockServer.setJwks({ keys: [jwk1] });
 
     const tokenOldKey = await createToken({ sub: 'user-before-rotation' }, signConfigKey1);
     const payloadOld1 = await verifyToken(tokenOldKey, verifyConfig);
-    assert.equal(payloadOld1.sub, 'user-before-rotation');
+    expect(payloadOld1.sub).toBe('user-before-rotation');
 
-    // Step 2: Key Introduction - JWKS updated with both key 1 and key 2 (overlapping)
     const jwk2 = exportJwkFromPublicKeyPem(keypair2.publicKey, kid2);
     mockServer.setJwks({ keys: [jwk1, jwk2] });
 
-    // Step 3: Signer Switch - Auth switches to key 2
     const tokenNewKey = await createToken({ sub: 'user-after-rotation' }, signConfigKey2);
 
-    // Step 4: Overlapping verification - both old and new tokens verify
     const payloadNew = await verifyToken(tokenNewKey, verifyConfig);
     const payloadOld2 = await verifyToken(tokenOldKey, verifyConfig);
-    assert.equal(payloadNew.sub, 'user-after-rotation');
-    assert.equal(payloadOld2.sub, 'user-before-rotation');
+    expect(payloadNew.sub).toBe('user-after-rotation');
+    expect(payloadOld2.sub).toBe('user-before-rotation');
 
-    // Step 5: Key Retirement - Remove key 1 from JWKS
     mockServer.setJwks({ keys: [jwk2] });
-    _resetKeys(); // Simulate cache eviction
+    _resetKeys();
 
-    // New token continues to verify
     const payloadNewAfterRetirement = await verifyToken(tokenNewKey, verifyConfig);
-    assert.equal(payloadNewAfterRetirement.sub, 'user-after-rotation');
+    expect(payloadNewAfterRetirement.sub).toBe('user-after-rotation');
 
-    // Old token with retired key is rejected
     await assert.rejects(
       async () => verifyToken(tokenOldKey, verifyConfig),
       (err) => {
@@ -132,15 +129,13 @@ describe('Key Rotation & Multi-Key JWKS', () => {
     const token = await createToken({ sub: 'cached-user' }, signConfigKey1);
     const initialCount = mockServer.getRequestCount();
 
-    // First verification hits JWKS
     await verifyToken(token, verifyConfig);
-    assert.equal(mockServer.getRequestCount(), initialCount + 1);
+    expect(mockServer.getRequestCount()).toBe(initialCount + 1);
 
-    // Subsequent 10 verifications use cached key (zero extra requests)
     for (let i = 0; i < 10; i++) {
       await verifyToken(token, verifyConfig);
     }
-    assert.equal(mockServer.getRequestCount(), initialCount + 1);
+    expect(mockServer.getRequestCount()).toBe(initialCount + 1);
   });
 
   it('handles high concurrent verifications without errors or race conditions', async () => {
@@ -151,14 +146,14 @@ describe('Key Rotation & Multi-Key JWKS', () => {
     ]);
 
     const promises = Array.from({ length: 60 }, (_, i) =>
-      verifyToken(tokens[i % tokens.length], verifyConfig),
+      verifyToken(tokens[i % tokens.length]!, verifyConfig),
     );
 
     const results = await Promise.all(promises);
-    assert.equal(results.length, 60);
+    expect(results.length).toBe(60);
     for (let i = 0; i < 60; i++) {
-      assert.ok(results[i].sub.startsWith('concurrent-'));
-      assert.equal(results[i].type, 'access');
+      expect(results[i]!.sub.startsWith('concurrent-')).toBe(true);
+      expect(results[i]!.type).toBe('access');
     }
   });
 });

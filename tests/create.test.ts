@@ -1,19 +1,22 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import assert from 'node:assert/strict';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import { createToken } from '../src/create.js';
 import { _resetKeys } from '../src/keys.js';
 import { ERROR_CODES, StudioJwtError } from '../src/errors.js';
+import type { SignConfig } from '../src/types.js';
 import {
   generateTestRsaKeyPair,
   generatePkcs1KeyPair,
   createTempKeyFile,
+  type KeyPairResult,
+  type TempKeyFile,
 } from './test-utils.js';
 
 describe('createToken', () => {
-  let testKeypair;
-  let tempKey;
-  let validConfig;
+  let testKeypair: KeyPairResult;
+  let tempKey: TempKeyFile;
+  let validConfig: SignConfig;
 
   beforeEach(() => {
     testKeypair = generateTestRsaKeyPair();
@@ -47,30 +50,30 @@ describe('createToken', () => {
     };
 
     const token = await createToken(payload, validConfig);
-    assert.equal(typeof token, 'string');
-    assert.equal(token.split('.').length, 3);
+    expect(typeof token).toBe('string');
+    expect(token.split('.').length).toBe(3);
 
     const header = decodeProtectedHeader(token);
-    assert.equal(header.alg, 'RS256');
-    assert.equal(header.kid, 'auth-test-1');
-    assert.equal(header.typ, 'JWT');
+    expect(header.alg).toBe('RS256');
+    expect(header.kid).toBe('auth-test-1');
+    expect(header.typ).toBe('JWT');
 
     const decoded = decodeJwt(token);
-    assert.equal(decoded.sub, 'user-123');
-    assert.equal(decoded.type, 'access');
-    assert.equal(decoded.actor, 'SALON_USER');
-    assert.equal(decoded.role, 'OWNER');
-    assert.equal(decoded.sid, 'session-456');
-    assert.equal(decoded.did, 'device-789');
-    assert.equal(decoded.iss, 'studio-auth');
-    assert.equal(decoded.aud, 'studio-api');
-    assert.ok(typeof decoded.iat === 'number');
-    assert.ok(typeof decoded.exp === 'number');
-    assert.ok(decoded.exp > decoded.iat);
+    expect(decoded.sub).toBe('user-123');
+    expect(decoded.type).toBe('access');
+    expect(decoded.actor).toBe('SALON_USER');
+    expect(decoded.role).toBe('OWNER');
+    expect(decoded.sid).toBe('session-456');
+    expect(decoded.did).toBe('device-789');
+    expect(decoded.iss).toBe('studio-auth');
+    expect(decoded.aud).toBe('studio-api');
+    expect(typeof decoded.iat).toBe('number');
+    expect(typeof decoded.exp).toBe('number');
+    expect(decoded.exp!).toBeGreaterThan(decoded.iat!);
   });
 
   it('supports passing privateKey directly as a PEM string in config parameter', async () => {
-    const directPemConfig = {
+    const directPemConfig: SignConfig = {
       privateKey: testKeypair.privateKey,
       kid: 'auth-direct-1',
       issuer: 'studio-auth',
@@ -80,17 +83,17 @@ describe('createToken', () => {
 
     const token = await createToken({ sub: 'direct-pem-user' }, directPemConfig);
     const decoded = decodeJwt(token);
-    assert.equal(decoded.sub, 'direct-pem-user');
-    assert.equal(decoded.type, 'access');
+    expect(decoded.sub).toBe('direct-pem-user');
+    expect(decoded.type).toBe('access');
   });
 
   it('supports all existing actor types without unnecessary business logic', async () => {
     // 1. Customer (no actor)
     const customerToken = await createToken({ sub: 'cust-1', sid: 's-1', did: 'd-1' }, validConfig);
     const custPayload = decodeJwt(customerToken);
-    assert.equal(custPayload.sub, 'cust-1');
-    assert.equal(custPayload.type, 'access');
-    assert.equal(custPayload.actor, undefined);
+    expect(custPayload.sub).toBe('cust-1');
+    expect(custPayload.type).toBe('access');
+    expect(custPayload.actor).toBeUndefined();
 
     // 2. Company Staff
     const staffToken = await createToken(
@@ -104,8 +107,8 @@ describe('createToken', () => {
       validConfig,
     );
     const staffPayload = decodeJwt(staffToken);
-    assert.equal(staffPayload.actor, 'COMPANY_STAFF');
-    assert.equal(staffPayload.role, 'ADMIN');
+    expect(staffPayload.actor).toBe('COMPANY_STAFF');
+    expect(staffPayload.role).toBe('ADMIN');
 
     // 3. Stylist
     const stylistToken = await createToken(
@@ -118,7 +121,7 @@ describe('createToken', () => {
       validConfig,
     );
     const stylistPayload = decodeJwt(stylistToken);
-    assert.equal(stylistPayload.actor, 'STYLIST');
+    expect(stylistPayload.actor).toBe('STYLIST');
 
     // 4. Salon User
     const salonToken = await createToken(
@@ -132,8 +135,8 @@ describe('createToken', () => {
       validConfig,
     );
     const salonPayload = decodeJwt(salonToken);
-    assert.equal(salonPayload.actor, 'SALON_USER');
-    assert.equal(salonPayload.role, 'STAFF');
+    expect(salonPayload.actor).toBe('SALON_USER');
+    expect(salonPayload.role).toBe('STAFF');
 
     // 5. Custom claims (e.g. salonId)
     const customToken = await createToken(
@@ -145,7 +148,7 @@ describe('createToken', () => {
       validConfig,
     );
     const customPayload = decodeJwt(customToken);
-    assert.equal(customPayload.salonId, 'salon-abc-123');
+    expect(customPayload.salonId).toBe('salon-abc-123');
   });
 
   it('prevents callers from overriding protected claims', async () => {
@@ -175,7 +178,7 @@ describe('createToken', () => {
 
   it('rejects invalid token type override', async () => {
     await assert.rejects(
-      async () => createToken({ sub: 'user-1', type: 'refresh' }, validConfig),
+      async () => createToken({ sub: 'user-1', type: 'refresh' as any }, validConfig),
       (err) => {
         assert.ok(err instanceof StudioJwtError);
         assert.equal(err.code, ERROR_CODES.INVALID_CLAIMS);
@@ -187,14 +190,14 @@ describe('createToken', () => {
   it('accepts explicit type: "access" matching standard access tokens', async () => {
     const token = await createToken({ sub: 'user-1', type: 'access' }, validConfig);
     const payload = decodeJwt(token);
-    assert.equal(payload.type, 'access');
+    expect(payload.type).toBe('access');
   });
 
   it('rejects invalid or missing payload arguments', async () => {
     const invalidPayloads = [null, undefined, '', 123, true, []];
     for (const p of invalidPayloads) {
       await assert.rejects(
-        async () => createToken(p, validConfig),
+        async () => createToken(p as any, validConfig),
         (err) => {
           assert.ok(err instanceof StudioJwtError);
           assert.equal(err.code, ERROR_CODES.INVALID_CLAIMS);
@@ -204,9 +207,9 @@ describe('createToken', () => {
     }
 
     await assert.rejects(
-      async () => createToken({}, validConfig),
+      async () => createToken({} as any, validConfig),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.INVALID_CLAIMS);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.INVALID_CLAIMS);
         return true;
       },
     );
@@ -214,7 +217,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: '' }, validConfig),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.INVALID_CLAIMS);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.INVALID_CLAIMS);
         return true;
       },
     );
@@ -223,7 +226,7 @@ describe('createToken', () => {
   it('fails securely when config parameter is missing or incomplete', async () => {
     // Missing config entirely
     await assert.rejects(
-      async () => createToken({ sub: 'user-1' }),
+      async () => createToken({ sub: 'user-1' }, undefined as any),
       (err) => {
         assert.ok(err instanceof StudioJwtError);
         assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
@@ -236,7 +239,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, privateKeyPath: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -245,7 +248,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, kid: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -254,7 +257,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, issuer: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -263,7 +266,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, audience: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -272,7 +275,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, expiresIn: '' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -281,7 +284,7 @@ describe('createToken', () => {
     await assert.rejects(
       async () => createToken({ sub: 'user-1' }, { ...validConfig, expiresIn: 'bad-format' }),
       (err) => {
-        assert.equal(err.code, ERROR_CODES.CONFIG_ERROR);
+        assert.equal((err as StudioJwtError).code, ERROR_CODES.CONFIG_ERROR);
         return true;
       },
     );
@@ -322,9 +325,9 @@ describe('createToken', () => {
 
     try {
       const token = await createToken({ sub: 'pkcs1-user' }, { ...validConfig, privateKeyPath: pkcs1File.filePath });
-      assert.equal(typeof token, 'string');
+      expect(typeof token).toBe('string');
       const payload = decodeJwt(token);
-      assert.equal(payload.sub, 'pkcs1-user');
+      expect(payload.sub).toBe('pkcs1-user');
     } finally {
       pkcs1File.cleanup();
     }
@@ -336,10 +339,10 @@ describe('createToken', () => {
     );
 
     const tokens = await Promise.all(promises);
-    assert.equal(tokens.length, 20);
+    expect(tokens.length).toBe(20);
     for (let i = 0; i < 20; i++) {
-      const payload = decodeJwt(tokens[i]);
-      assert.equal(payload.sub, `concurrent-user-${i}`);
+      const payload = decodeJwt(tokens[i]!);
+      expect(payload.sub).toBe(`concurrent-user-${i}`);
     }
   });
 });

@@ -1,0 +1,15 @@
+src/
+examples/
+tests/
+*.test.js
+*.test.ts
+vitest.config.ts
+tsconfig.json
+tsconfig.build.json
+.yarnrc.yml
+.yarn/
+package-lock.json
+yarn.lock
+*.tgz
+coverage/
+.vitest/

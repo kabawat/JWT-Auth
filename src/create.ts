@@ -2,10 +2,11 @@ import { SignJWT } from 'jose';
 import { validateSignConfig } from './config.js';
 import { getPrivateKey } from './keys.js';
 import { createInvalidClaimsError } from './errors.js';
+import type { SignConfig, CustomClaims } from './types.js';
 
 const PROTECTED_CLAIMS = new Set(['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'alg', 'kid']);
 
-export async function createToken(payload, config) {
+export async function createToken(payload: CustomClaims, config: SignConfig): Promise<string> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw createInvalidClaimsError('Token payload must be a non-null object');
   }
